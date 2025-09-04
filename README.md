@@ -104,6 +104,18 @@ The application uses the following MongoDB collections:
 - **payments** - Payment records
 - **notifications** - User notifications
 
+## 📊 Sample Data
+
+The `seed-sample-data.js` script creates comprehensive sample data including:
+
+- **7 Categories**: Diamond Rings, Luxury Watches, Gold Necklaces, Pearl Earrings, Wedding Bands, Bracelets, Pendants
+- **8 Products**: Complete product catalog with variants, pricing, and images
+- **5 Users**: Including regular users and admin accounts
+- **3 Notifications**: Sample user notifications
+- **1 Sample Order**: Complete order with shipping and payment details
+
+All data includes proper MongoDB ObjectIds and relationships between collections.
+
 ## 🔧 Environment Configuration
 
 Each service requires a `.env` file with the following variables:
