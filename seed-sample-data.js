@@ -1,6 +1,16 @@
 const { MongoClient, ObjectId } = require('mongodb');
 
-const MONGO_URI = 'mongodb://localhost:27017/lumora-jewel';
+// Separate databases per microservice
+const DATABASE_URIS = {
+  user: 'mongodb://localhost:27017/lumora_user',
+  product: 'mongodb://localhost:27017/lumora_product',
+  category: 'mongodb://localhost:27017/lumora_category',
+  cart: 'mongodb://localhost:27017/lumora_cart',
+  order: 'mongodb://localhost:27017/lumora_order',
+  payment: 'mongodb://localhost:27017/lumora_payment',
+  notification: 'mongodb://localhost:27017/lumora_notification',
+  auth: 'mongodb://localhost:27017/lumora_auth'
+};
 
 const sampleData = {
   categories: [
@@ -259,152 +269,182 @@ const sampleData = {
   ]
 };
 
-async function seedDatabase() {
-  const client = new MongoClient(MONGO_URI);
-  
+async function withClient(uri, fn) {
+  const client = new MongoClient(uri);
   try {
     await client.connect();
-    console.log('Connected to MongoDB');
-    
-    const db = client.db('lumora-jewel');
-    
-    // Clear existing data
-    console.log('Clearing existing data...');
-    await db.collection('categories').deleteMany({});
-    await db.collection('products').deleteMany({});
-    await db.collection('users').deleteMany({});
-    await db.collection('carts').deleteMany({});
-    await db.collection('orders').deleteMany({});
-    await db.collection('payments').deleteMany({});
-    await db.collection('notifications').deleteMany({});
-    
-    // Insert categories first
-    console.log('Inserting categories...');
-    const categoryResult = await db.collection('categories').insertMany(sampleData.categories);
-    const categoryIds = Object.values(categoryResult.insertedIds);
-    
-    // Map category names to IDs for product linking
-    const categoryMap = {};
-    const categories = await db.collection('categories').find({}).toArray();
-    categories.forEach(cat => {
-      categoryMap[cat.name] = cat._id;
-    });
-    
-    // Update products with proper category IDs
-    const productMappings = [
-      { name: 'Elegant Diamond Solitaire Ring', category: 'Diamond Rings' },
-      { name: 'Vintage Rose Gold Wedding Band', category: 'Wedding Bands' },
-      { name: 'Luxury Swiss Watch', category: 'Luxury Watches' },
-      { name: 'Pearl Drop Earrings', category: 'Pearl Earrings' },
-      { name: 'Gold Chain Necklace', category: 'Gold Necklaces' },
-      { name: 'Diamond Tennis Bracelet', category: 'Bracelets' },
-      { name: 'Heart Pendant Necklace', category: 'Pendants' },
-      { name: 'Classic Pearl Stud Earrings', category: 'Pearl Earrings' }
-    ];
-    
-    sampleData.products.forEach((product, index) => {
-      const mapping = productMappings[index];
-      if (mapping && categoryMap[mapping.category]) {
-        product.categoryId = categoryMap[mapping.category];
-      }
-    });
-    
-    console.log('Inserting products...');
-    await db.collection('products').insertMany(sampleData.products);
-    
-    console.log('Inserting users...');
-    const userResult = await db.collection('users').insertMany(sampleData.users);
-    const userIds = Object.values(userResult.insertedIds);
-    
-    // Create some sample notifications
-    console.log('Creating sample notifications...');
-    const notifications = [
-      {
-        _id: new ObjectId(),
-        userId: userIds[0], // John Doe
-        title: 'Welcome to Lumora Jewel!',
-        message: 'Thank you for joining our exclusive jewelry collection.',
-        type: 'info',
-        isRead: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        _id: new ObjectId(),
-        userId: userIds[0], // John Doe
-        title: 'New Collection Available',
-        message: 'Check out our latest diamond rings collection.',
-        type: 'promotion',
-        isRead: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        _id: new ObjectId(),
-        userId: userIds[1], // Jane Smith
-        title: 'Special Offer',
-        message: 'Get 20% off on all pearl earrings this week!',
-        type: 'promotion',
-        isRead: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    ];
-    await db.collection('notifications').insertMany(notifications);
-    
-    // Create some sample orders
-    console.log('Creating sample orders...');
-    const orders = [
-      {
-        _id: new ObjectId(),
-        userId: userIds[0], // John Doe
-        orderNumber: 'ORD-001',
-        items: [
-          {
-            productId: sampleData.products[0]._id,
-            productName: sampleData.products[0].name,
-            productImage: sampleData.products[0].images[0],
-            quantity: 1,
-            price: sampleData.products[0].price,
-            selectedVariant: { color: 'White Gold', size: '6' }
-          }
-        ],
-        shippingAddress: {
-          firstName: 'John',
-          lastName: 'Doe',
-          address: '123 Main St',
-          city: 'New York',
-          state: 'NY',
-          zipCode: '10001',
-          country: 'United States',
-          phone: '+1-555-0123'
-        },
-        subtotal: 2500,
-        shippingCost: 0,
-        tax: 200,
-        total: 2700,
-        status: 'delivered',
-        paymentStatus: 'paid',
-        paymentMethod: 'credit_card',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    ];
-    await db.collection('orders').insertMany(orders);
-    
-    console.log('✅ Sample data inserted successfully!');
-    console.log(`📊 Created:`);
-    console.log(`   - ${sampleData.categories.length} categories`);
-    console.log(`   - ${sampleData.products.length} products`);
-    console.log(`   - ${sampleData.users.length} users`);
-    console.log(`   - ${notifications.length} notifications`);
-    console.log(`   - ${orders.length} orders`);
-    
-  } catch (error) {
-    console.error('Error seeding database:', error);
+    return await fn(client);
   } finally {
     await client.close();
   }
 }
 
-seedDatabase();
+async function seedDatabasePerService() {
+  console.log('Connecting to separate databases for each service...');
+
+  // 1) CATEGORY SERVICE
+  console.log('Clearing and seeding categories (category service)...');
+  await withClient(DATABASE_URIS.category, async (client) => {
+    const db = client.db('lumora_category');
+    await db.collection('categories').deleteMany({});
+    await db.collection('categories').insertMany(sampleData.categories);
+  });
+
+  // Build a map of category name -> _id from category DB for later linking
+  const categoryMap = {};
+  await withClient(DATABASE_URIS.category, async (client) => {
+    const db = client.db('lumora_category');
+    const categories = await db.collection('categories').find({}).toArray();
+    categories.forEach(cat => { categoryMap[cat.name] = cat._id; });
+  });
+
+  // 2) PRODUCT SERVICE
+  console.log('Clearing and seeding products (product service)...');
+  // Assign categoryId references using the categoryMap
+  const productMappings = [
+    { name: 'Elegant Diamond Solitaire Ring', category: 'Diamond Rings' },
+    { name: 'Vintage Rose Gold Wedding Band', category: 'Wedding Bands' },
+    { name: 'Luxury Swiss Watch', category: 'Luxury Watches' },
+    { name: 'Pearl Drop Earrings', category: 'Pearl Earrings' },
+    { name: 'Gold Chain Necklace', category: 'Gold Necklaces' },
+    { name: 'Diamond Tennis Bracelet', category: 'Bracelets' },
+    { name: 'Heart Pendant Necklace', category: 'Pendants' },
+    { name: 'Classic Pearl Stud Earrings', category: 'Pearl Earrings' }
+  ];
+  sampleData.products.forEach((product, index) => {
+    const mapping = productMappings[index];
+    if (mapping && categoryMap[mapping.category]) {
+      product.categoryId = categoryMap[mapping.category];
+    }
+  });
+  await withClient(DATABASE_URIS.product, async (client) => {
+    const db = client.db('lumora_product');
+    await db.collection('products').deleteMany({});
+    await db.collection('products').insertMany(sampleData.products);
+  });
+
+  // 3) USER SERVICE
+  console.log('Clearing and seeding users (user service)...');
+  const userIds = [];
+  await withClient(DATABASE_URIS.user, async (client) => {
+    const db = client.db('lumora_user');
+    await db.collection('users').deleteMany({});
+    const result = await db.collection('users').insertMany(sampleData.users);
+    Object.values(result.insertedIds).forEach((id) => userIds.push(id));
+  });
+
+  // 4) NOTIFICATION SERVICE
+  console.log('Clearing and seeding notifications (notification service)...');
+  const notifications = [
+    {
+      _id: new ObjectId(),
+      userId: userIds[0],
+      title: 'Welcome to Lumora Jewel!',
+      message: 'Thank you for joining our exclusive jewelry collection.',
+      type: 'info',
+      isRead: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      _id: new ObjectId(),
+      userId: userIds[0],
+      title: 'New Collection Available',
+      message: 'Check out our latest diamond rings collection.',
+      type: 'promotion',
+      isRead: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      _id: new ObjectId(),
+      userId: userIds[1],
+      title: 'Special Offer',
+      message: 'Get 20% off on all pearl earrings this week!',
+      type: 'promotion',
+      isRead: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  ];
+  await withClient(DATABASE_URIS.notification, async (client) => {
+    const db = client.db('lumora_notification');
+    await db.collection('notifications').deleteMany({});
+    await db.collection('notifications').insertMany(notifications);
+  });
+
+  // 5) ORDER SERVICE
+  console.log('Clearing and seeding orders (order service)...');
+  const orders = [
+    {
+      _id: new ObjectId(),
+      userId: userIds[0],
+      orderNumber: 'ORD-001',
+      items: [
+        {
+          productId: sampleData.products[0]._id,
+          productName: sampleData.products[0].name,
+          productImage: sampleData.products[0].images[0],
+          quantity: 1,
+          price: sampleData.products[0].price,
+          selectedVariant: { color: 'White Gold', size: '6' }
+        }
+      ],
+      shippingAddress: {
+        firstName: 'John',
+        lastName: 'Doe',
+        address: '123 Main St',
+        city: 'New York',
+        state: 'NY',
+        zipCode: '10001',
+        country: 'United States',
+        phone: '+1-555-0123'
+      },
+      subtotal: 2500,
+      shippingCost: 0,
+      tax: 200,
+      total: 2700,
+      status: 'delivered',
+      paymentStatus: 'paid',
+      paymentMethod: 'credit_card',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  ];
+  await withClient(DATABASE_URIS.order, async (client) => {
+    const db = client.db('lumora_order');
+    await db.collection('orders').deleteMany({});
+    await db.collection('orders').insertMany(orders);
+  });
+
+  // 6) CART SERVICE (optional sample carts)
+  console.log('Clearing carts (cart service)...');
+  await withClient(DATABASE_URIS.cart, async (client) => {
+    const db = client.db('lumora_cart');
+    await db.collection('carts').deleteMany({});
+    // Optionally seed an empty cart per user or leave empty
+    // await db.collection('carts').insertMany(userIds.map((uid) => ({ _id: new ObjectId(), userId: uid, items: [], createdAt: new Date(), updatedAt: new Date() })));
+  });
+
+  // 7) PAYMENT SERVICE (no sample payments by default)
+  console.log('Clearing payments (payment service)...');
+  await withClient(DATABASE_URIS.payment, async (client) => {
+    const db = client.db('lumora_payment');
+    await db.collection('payments').deleteMany({});
+  });
+
+  // 8) AUTH SERVICE (no separate auth documents in this sample; users live in user DB)
+  console.log('Auth service has no separate seed data in this script.');
+
+  console.log('✅ Sample data inserted across separate databases successfully!');
+  console.log('📊 Created:');
+  console.log(`   - ${sampleData.categories.length} categories (lumora_category)`);
+  console.log(`   - ${sampleData.products.length} products (lumora_product)`);
+  console.log(`   - ${sampleData.users.length} users (lumora_user)`);
+  console.log(`   - ${notifications.length} notifications (lumora_notification)`);
+  console.log(`   - ${orders.length} orders (lumora_order)`);
+}
+
+seedDatabasePerService().catch((err) => {
+  console.error('Error seeding databases:', err);
+});
